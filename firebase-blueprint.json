@@ -1,0 +1,78 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and KYC information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "aadhaarId": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "voter"] },
+        "kycStatus": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "did": { "type": "string" },
+        "walletAddress": { "type": "string" },
+        "kycDocumentUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "aadhaarId", "role", "kycStatus"]
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "Election candidate",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "party": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["id", "name", "party"]
+    },
+    "Election": {
+      "title": "Election",
+      "description": "Voting event",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string", "enum": ["upcoming", "active", "ended"] },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "status"]
+    },
+    "Vote": {
+      "title": "Vote",
+      "description": "A cast vote record",
+      "type": "object",
+      "properties": {
+        "voterUid": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "txHash": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["voterUid", "candidateId", "txHash"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/candidates/{candidateId}": {
+      "schema": "Candidate",
+      "description": "Election candidates"
+    },
+    "/elections/{electionId}": {
+      "schema": "Election",
+      "description": "Election events"
+    },
+    "/votes/{userId}": {
+      "schema": "Vote",
+      "description": "Cast votes"
+    }
+  }
+}

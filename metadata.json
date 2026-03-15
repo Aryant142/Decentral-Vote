@@ -1,0 +1,8 @@
+{
+  "name": "Decentralized Identity KYC Voting System",
+  "description": "A secure blockchain-based voting system with Decentralized Identity (DID) and KYC verification.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

@@ -1,0 +1,141 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId}
+// Fields:
+//   - uid: string (required, immutable) - Firebase Auth UID
+//   - name: string (required) - Full name
+//   - email: string (required, format: email) - User email
+//   - aadhaarId: string (required) - National ID
+//   - role: string (required, enum: ['admin', 'voter']) - User role
+//   - kycStatus: string (required, enum: ['pending', 'approved', 'rejected']) - KYC status
+//   - did: string (optional) - Decentralized Identity
+//   - walletAddress: string (optional) - Ethereum wallet address
+//   - kycDocumentUrl: string (optional) - URL to uploaded document
+//   - createdAt: timestamp (required) - Creation time
+//
+// Collection: candidates
+// Document ID: {candidateId}
+// Fields:
+//   - id: string (required) - Candidate ID
+//   - name: string (required) - Candidate name
+//   - party: string (required) - Political party
+//   - description: string (optional) - Candidate bio
+//   - imageUrl: string (optional) - Candidate photo
+//
+// Collection: elections
+// Document ID: {electionId}
+// Fields:
+//   - id: string (required) - Election ID
+//   - title: string (required) - Election title
+//   - status: string (required, enum: ['upcoming', 'active', 'ended']) - Election status
+//   - startDate: timestamp (optional) - Start time
+//   - endDate: timestamp (optional) - End time
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "aryant214@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'aadhaarId', 'role', 'kycStatus']) &&
+        data.uid == request.auth.uid &&
+        data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+        isValidEmail(data.email) &&
+        data.aadhaarId is string && (data.aadhaarId.size() == 12 || data.aadhaarId == 'PENDING') && // Assuming 12-digit Aadhaar or PENDING
+        data.role in ['admin', 'voter'] &&
+        data.kycStatus in ['pending', 'approved', 'rejected'];
+    }
+
+    function isValidCandidate(data) {
+      return data.keys().hasAll(['id', 'name', 'party']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() < 50 &&
+        data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+        data.party is string && data.party.size() > 0 && data.party.size() < 100 &&
+        (!('description' in data) || (data.description is string && data.description.size() < 1000)) &&
+        (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() < 500));
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Users can read their own profile. Admins can read all.
+      // CRITICAL: PII (email, aadhaarId) is protected.
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Users can create their own profile as 'voter' with 'pending' KYC.
+      // Admins can create any profile.
+      allow create: if isAuthenticated() && (
+        (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'voter' && request.resource.data.kycStatus == 'pending') ||
+        isAdmin()
+      );
+
+      // Users can update their own name/walletAddress/kycDocumentUrl.
+      // Admins can update kycStatus, role, did.
+      allow update: if isAuthenticated() && (
+        (isOwner(userId) && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'walletAddress', 'kycDocumentUrl', 'updatedAt']) &&
+         request.resource.data.uid == resource.data.uid &&
+         request.resource.data.email == resource.data.email &&
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.kycStatus == resource.data.kycStatus) ||
+        isAdmin()
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    match /candidates/{candidateId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidCandidate(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /elections/{electionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /votes/{userId} {
+      // Users can read their own vote. Admins can read all.
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Users can only vote once (enforced by document ID being userId)
+      // Must be KYC approved to vote.
+      allow create: if isOwner(userId) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.kycStatus == 'approved' &&
+        request.resource.data.keys().hasAll(['voterUid', 'candidateId', 'txHash', 'timestamp']) &&
+        request.resource.data.keys().hasOnly(['voterUid', 'candidateId', 'txHash', 'timestamp', 'walletAddress']) &&
+        request.resource.data.voterUid == request.auth.uid;
+      
+      allow update: if false; // Votes are immutable
+      allow delete: if isAdmin(); // Admins can reset election
+    }
+  }
+}
