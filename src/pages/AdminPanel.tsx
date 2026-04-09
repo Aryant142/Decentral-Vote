@@ -24,11 +24,12 @@ const AdminPanel: React.FC = () => {
   // Reset Confirmation State
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const [viewingDoc, setViewingDoc] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
     const unsubscribeUsers = onSnapshot(q, (snapshot) => {
-      setUsers(snapshot.docs.map(doc => doc.data() as User));
+      setUsers(snapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User)));
       setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'users');
@@ -285,15 +286,16 @@ const AdminPanel: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         {user.kycDocumentUrl ? (
-                          <a 
-                            href={user.kycDocumentUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
+                          <button 
+                            onClick={() => {
+                              console.log("Viewing document for user:", user.uid, "URL length:", user.kycDocumentUrl?.length);
+                              setViewingDoc(user.kycDocumentUrl!);
+                            }}
                             className="flex items-center space-x-1 text-indigo-600 hover:underline text-sm font-medium"
                           >
                             <Eye className="w-4 h-4" />
                             <span>View Doc</span>
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-neutral-400 text-xs italic">No doc</span>
                         )}
@@ -511,6 +513,63 @@ const AdminPanel: React.FC = () => {
                   No, Keep Data
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Preview Modal */}
+      {viewingDoc && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[110] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-neutral-100 flex justify-between items-center">
+              <h3 className="text-xl font-bold">Voter Card Preview</h3>
+              <button onClick={() => setViewingDoc(null)} className="text-neutral-400 hover:text-neutral-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 overflow-auto flex-grow flex items-center justify-center bg-neutral-50 min-h-[400px]">
+              {viewingDoc.startsWith('data:image') ? (
+                <div className="relative group">
+                  <img 
+                    src={viewingDoc} 
+                    alt="Voter Card" 
+                    className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-lg border-4 border-white"
+                    onError={(e) => {
+                      console.error("Image failed to load");
+                      const target = e.target as HTMLImageElement;
+                      target.src = 'https://placehold.co/600x400?text=Image+Load+Error';
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors pointer-events-none rounded-xl" />
+                </div>
+              ) : (
+                <div className="text-center space-y-6 max-w-md">
+                  <div className="bg-white p-8 rounded-3xl shadow-sm border border-neutral-100">
+                    <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                    <h4 className="text-lg font-bold mb-2">External Document</h4>
+                    <p className="text-neutral-500 text-sm mb-6">This document is stored at an external URL. For security, please open it in a new tab.</p>
+                    <a 
+                      href={viewingDoc} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center space-x-2 bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>Open Document</span>
+                    </a>
+                  </div>
+                  <p className="text-xs text-neutral-400 break-all">URL: {viewingDoc}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-neutral-100 flex justify-end">
+              <button 
+                onClick={() => setViewingDoc(null)}
+                className="px-6 py-2 bg-neutral-900 text-white rounded-xl font-bold hover:bg-neutral-800 transition-all"
+              >
+                Close Preview
+              </button>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { db } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 /**
  * Solidity Smart Contract (for reference and deployment)
@@ -62,20 +62,42 @@ class BlockchainService {
 
   private async initialize() {
     if (this.initialized) return;
-    try {
-      const votesSnap = await getDocs(collection(db, 'votes'));
-      votesSnap.forEach(doc => {
+    
+    // Only initialize if we have a user, otherwise we'll get permission errors
+    const { auth } = await import('../firebase');
+    if (!auth.currentUser) {
+      console.warn("Blockchain sync deferred: No authenticated user.");
+      return;
+    }
+
+    this.initialized = true;
+
+    // Set up real-time listener for votes to simulate blockchain transparency
+    onSnapshot(collection(db, 'votes'), (snapshot) => {
+      const newVotes: Record<string, number> = {};
+      const newVotedAddresses: Set<string> = new Set();
+      
+      snapshot.docs.forEach(doc => {
         const data = doc.data();
         const candidateId = data.candidateId;
-        this.mockVotes[candidateId] = (this.mockVotes[candidateId] || 0) + 1;
+        if (candidateId) {
+          newVotes[candidateId] = (newVotes[candidateId] || 0) + 1;
+        }
         if (data.walletAddress) {
-          this.mockVotedAddresses.add(data.walletAddress.toLowerCase());
+          newVotedAddresses.add(data.walletAddress.toLowerCase());
         }
       });
-      this.initialized = true;
-    } catch (error) {
-      console.error("Blockchain mock init failed:", error);
-    }
+      
+      this.mockVotes = newVotes;
+      this.mockVotedAddresses = newVotedAddresses;
+    }, (error: any) => {
+      if (error.code === 'permission-denied') {
+        console.warn("Blockchain sync permission denied. Retrying on next interaction.");
+      } else {
+        console.error("Blockchain sync failed:", error);
+      }
+      this.initialized = false; // Allow retry if it fails
+    });
   }
 
   async connectWallet() {

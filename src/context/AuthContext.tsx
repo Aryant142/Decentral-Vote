@@ -31,8 +31,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(null);
           }
           setLoading(false);
-        }, (error) => {
-          handleFirestoreError(error, OperationType.GET, `users/${fUser.uid}`);
+        }, (error: any) => {
+          // If it's a permission error, it might be a race condition where the token isn't ready yet
+          if (error.code === 'permission-denied') {
+            console.warn("Firestore permission denied for user profile. This might be a transient state during login.");
+          } else {
+            handleFirestoreError(error, OperationType.GET, `users/${fUser.uid}`);
+          }
           setLoading(false);
         });
         
