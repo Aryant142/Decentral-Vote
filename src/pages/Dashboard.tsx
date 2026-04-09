@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, updateDoc, collection, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { blockchainService } from '../services/blockchainService';
 import { toast } from 'react-hot-toast';
-import { Shield, CheckCircle, Clock, XCircle, Wallet, Fingerprint, Upload, BarChart3, Camera, RefreshCw } from 'lucide-react';
+import { Shield, CheckCircle, Clock, XCircle, Wallet, Fingerprint, Upload, BarChart3, Camera, RefreshCw, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Candidate } from '../types';
+import { Candidate, Election } from '../types';
+import { INDIAN_STATES } from '../constants';
 import { useRef } from 'react';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [walletAddress, setWalletAddress] = useState(user?.walletAddress || '');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isUpdatingState, setIsUpdatingState] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [elections, setElections] = useState<Election[]>([]);
+  const [activeElection, setActiveElection] = useState<Election | null>(null);
   const [results, setResults] = useState<Record<string, number>>({});
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -21,11 +25,30 @@ const Dashboard: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'candidates'), (snapshot) => {
-      setCandidates(snapshot.docs.map(doc => doc.data() as Candidate));
+    const unsubscribe = onSnapshot(collection(db, 'elections'), (snapshot) => {
+      const allElections = snapshot.docs.map(doc => doc.data() as Election);
+      setElections(allElections);
+      
+      if (user) {
+        // Find active election for user's state
+        const relevant = allElections.find(e => e.state === user.state && e.status === 'active');
+        setActiveElection(relevant || null);
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [user]);
+
+  useEffect(() => {
+    if (activeElection) {
+      const q = query(collection(db, 'candidates'), where('electionId', '==', activeElection.id));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        setCandidates(snapshot.docs.map(doc => doc.data() as Candidate));
+      });
+      return () => unsubscribe();
+    } else {
+      setCandidates([]);
+    }
+  }, [activeElection]);
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -72,6 +95,22 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleUpdateState = async (newState: string) => {
+    if (!user) return;
+    setIsUpdatingState(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        state: newState,
+        updatedAt: new Date().toISOString()
+      });
+      toast.success('State updated successfully!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+      toast.error('Failed to update state');
+    } finally {
+      setIsUpdatingState(false);
+    }
+  };
   const handleUploadKYC = async () => {
     if (!capturedImage) {
       toast.error('Please capture a photo of your voter card first.');
@@ -294,8 +333,26 @@ const Dashboard: React.FC = () => {
 
       {/* Profile Details */}
       <section className="bg-white rounded-3xl border border-neutral-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-neutral-100">
+        <div className="p-8 border-b border-neutral-100 flex justify-between items-center">
           <h3 className="text-xl font-bold">Personal Information</h3>
+          <div className="flex items-center space-x-2 bg-indigo-50 px-4 py-2 rounded-xl">
+            <MapPin className="w-4 h-4 text-indigo-600" />
+            {user.state ? (
+              <span className="text-sm font-bold text-indigo-600">{user.state}</span>
+            ) : (
+              <select 
+                className="text-sm font-bold text-indigo-600 bg-transparent outline-none cursor-pointer"
+                onChange={(e) => handleUpdateState(e.target.value)}
+                defaultValue=""
+                disabled={isUpdatingState}
+              >
+                <option value="" disabled>Select State</option>
+                {INDIAN_STATES.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
         <div className="grid md:grid-cols-2 gap-8 p-8">
           <InfoItem label="Full Name" value={user.name} />
@@ -348,13 +405,33 @@ const Dashboard: React.FC = () => {
 
       {/* Election Results Section */}
       <section className="bg-white rounded-3xl border border-neutral-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-neutral-100 flex items-center space-x-3">
-          <BarChart3 className="w-6 h-6 text-indigo-600" />
-          <h3 className="text-xl font-bold">Live Election Results</h3>
+        <div className="p-8 border-b border-neutral-100 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <BarChart3 className="w-6 h-6 text-indigo-600" />
+            <h3 className="text-xl font-bold">
+              {activeElection ? activeElection.title : 'Live Election Results'}
+            </h3>
+          </div>
+          {activeElection && (
+            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full uppercase tracking-widest">
+              {activeElection.state}
+            </span>
+          )}
         </div>
         <div className="p-8 space-y-6">
-          {candidates.length === 0 ? (
-            <p className="text-neutral-500 italic">No candidates registered yet.</p>
+          {!activeElection ? (
+            <div className="text-center py-12 space-y-4">
+              <div className="bg-neutral-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto">
+                <Clock className="w-8 h-8 text-neutral-300" />
+              </div>
+              <p className="text-neutral-500 italic">
+                {!user.state 
+                  ? "Please select your state in the Personal Information section above to see relevant elections."
+                  : `No active elections found for ${user.state}.`}
+              </p>
+            </div>
+          ) : candidates.length === 0 ? (
+            <p className="text-neutral-500 italic">No candidates registered for this election yet.</p>
           ) : (
             candidates.map((candidate) => {
               const votes = results[candidate.id] || 0;

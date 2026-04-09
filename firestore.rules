@@ -9,6 +9,7 @@
 //   - name: string (required) - Full name
 //   - email: string (required, format: email) - User email
 //   - aadhaarId: string (required) - National ID
+//   - state: string (required) - State of residence
 //   - role: string (required, enum: ['admin', 'voter']) - User role
 //   - kycStatus: string (required, enum: ['pending', 'approved', 'rejected']) - KYC status
 //   - did: string (optional) - Decentralized Identity
@@ -30,6 +31,7 @@
 // Fields:
 //   - id: string (required) - Election ID
 //   - title: string (required) - Election title
+//   - state: string (required) - State for the election
 //   - status: string (required, enum: ['upcoming', 'active', 'ended']) - Election status
 //   - startDate: timestamp (optional) - Start time
 //   - endDate: timestamp (optional) - End time
@@ -68,14 +70,24 @@ service cloud.firestore {
         data.uid == request.auth.uid &&
         data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
         isValidEmail(data.email) &&
-        data.aadhaarId is string && (data.aadhaarId.size() == 12 || data.aadhaarId == 'PENDING') && // Assuming 12-digit Aadhaar or PENDING
+        data.aadhaarId is string && (data.aadhaarId.size() == 12 || data.aadhaarId == 'PENDING') &&
+        (!('state' in data) || (data.state is string && data.state.size() > 0)) &&
         data.role in ['admin', 'voter'] &&
         data.kycStatus in ['pending', 'approved', 'rejected'];
     }
 
+    function isValidElection(data) {
+      return data.keys().hasAll(['id', 'title', 'state', 'status']) &&
+        data.id is string && data.id.size() > 0 &&
+        data.title is string && data.title.size() > 0 &&
+        data.state is string && data.state.size() > 0 &&
+        data.status in ['upcoming', 'active', 'ended'];
+    }
+
     function isValidCandidate(data) {
-      return data.keys().hasAll(['id', 'name', 'party']) &&
+      return data.keys().hasAll(['id', 'electionId', 'name', 'party']) &&
         data.id is string && data.id.size() > 0 && data.id.size() < 50 &&
+        data.electionId is string && data.electionId.size() > 0 &&
         data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
         data.party is string && data.party.size() > 0 && data.party.size() < 100 &&
         (!('description' in data) || (data.description is string && data.description.size() < 1000)) &&
@@ -121,7 +133,8 @@ service cloud.firestore {
 
     match /elections/{electionId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow create, update: if isAdmin() && isValidElection(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /votes/{userId} {

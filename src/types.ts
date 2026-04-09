@@ -7,6 +7,7 @@ export interface User {
   name: string;
   email: string;
   aadhaarId: string;
+  state: string;
   role: UserRole;
   kycStatus: KYCStatus;
   did?: string;
@@ -17,6 +18,7 @@ export interface User {
 
 export interface Candidate {
   id: string;
+  electionId: string;
   name: string;
   party: string;
   description?: string;
@@ -26,6 +28,7 @@ export interface Candidate {
 export interface Election {
   id: string;
   title: string;
+  state: string;
   status: ElectionStatus;
   startDate?: any;
   endDate?: any;

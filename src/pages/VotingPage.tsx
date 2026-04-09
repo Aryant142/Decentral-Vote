@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, onSnapshot, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, serverTimestamp, query, where } from 'firebase/firestore';
 import { blockchainService } from '../services/blockchainService';
 import { Candidate, Election } from '../types';
 import { toast } from 'react-hot-toast';
@@ -10,6 +11,7 @@ import { motion } from 'motion/react';
 
 const VotingPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [election, setElection] = useState<Election | null>(null);
   const [electionLoading, setElectionLoading] = useState(true);
@@ -18,17 +20,11 @@ const VotingPage: React.FC = () => {
   const [results, setResults] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    const unsubscribeCandidates = onSnapshot(collection(db, 'candidates'), (snapshot) => {
-      setCandidates(snapshot.docs.map(doc => doc.data() as Candidate));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'candidates');
-    });
-
-    // Fetch the active election
+    // Fetch the active election for user's state
     const unsubscribeElection = onSnapshot(collection(db, 'elections'), (snapshot) => {
       const activeElection = snapshot.docs
         .map(doc => doc.data() as Election)
-        .find(e => e.status === 'active');
+        .find(e => e.status === 'active' && e.state === user?.state);
       
       setElection(activeElection || null);
       setElectionLoading(false);
@@ -36,6 +32,17 @@ const VotingPage: React.FC = () => {
       handleFirestoreError(error, OperationType.LIST, 'elections');
       setElectionLoading(false);
     });
+
+    // Listen to candidates for the active election
+    let unsubscribeCandidates = () => {};
+    if (election) {
+      const q = query(collection(db, 'candidates'), where('electionId', '==', election.id));
+      unsubscribeCandidates = onSnapshot(q, (snapshot) => {
+        setCandidates(snapshot.docs.map(doc => doc.data() as Candidate));
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'candidates');
+      });
+    }
 
     // Listen to user's vote status
     let unsubscribeVote: () => void = () => {};
@@ -54,7 +61,7 @@ const VotingPage: React.FC = () => {
       unsubscribeElection();
       unsubscribeVote();
     };
-  }, [user]);
+  }, [user, election?.id]);
 
   // Fetch results from blockchain
   useEffect(() => {
@@ -134,17 +141,34 @@ const VotingPage: React.FC = () => {
         </div>
         <div className="space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">Voting Not Available</h1>
-          <p className="text-neutral-500 text-lg">
-            There are no active elections at this time. Please check back later or contact the administrator for more information.
-          </p>
-        </div>
-        <div className="pt-8">
-          <button 
-            onClick={() => window.location.reload()}
-            className="px-8 py-3 bg-neutral-900 text-white rounded-xl font-bold hover:bg-neutral-800 transition-all"
-          >
-            Refresh Page
-          </button>
+          {!user?.state ? (
+            <div className="space-y-4">
+              <p className="text-neutral-500 text-lg">
+                Your profile is missing your <strong>State of Residence</strong>. 
+                Please update your profile to see elections in your area.
+              </p>
+              <Link 
+                to="/dashboard"
+                className="inline-block px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all"
+              >
+                Go to Dashboard
+              </Link>
+            </div>
+          ) : (
+            <>
+              <p className="text-neutral-500 text-lg">
+                There are no active elections for <strong>{user.state}</strong> at this time. Please check back later or contact the administrator.
+              </p>
+              <div className="pt-8">
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="px-8 py-3 bg-neutral-900 text-white rounded-xl font-bold hover:bg-neutral-800 transition-all"
+                >
+                  Refresh Page
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );

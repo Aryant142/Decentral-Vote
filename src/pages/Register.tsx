@@ -5,7 +5,8 @@ import { auth, db, googleProvider, handleFirestoreError, OperationType } from '.
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
-import { UserPlus, Mail, Lock, User, CreditCard } from 'lucide-react';
+import { UserPlus, Mail, Lock, User, CreditCard, MapPin } from 'lucide-react';
+import { INDIAN_STATES } from '../constants';
 
 const Register: React.FC = () => {
   const { firebaseUser, user: profile } = useAuth();
@@ -13,7 +14,8 @@ const Register: React.FC = () => {
     name: firebaseUser?.displayName || '',
     email: firebaseUser?.email || '',
     password: '',
-    aadhaarId: ''
+    aadhaarId: '',
+    state: INDIAN_STATES[0]
   });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -47,6 +49,7 @@ const Register: React.FC = () => {
         name: formData.name,
         email: formData.email,
         aadhaarId: formData.aadhaarId,
+        state: formData.state,
         role: 'voter',
         kycStatus: 'pending',
         createdAt: serverTimestamp()
@@ -136,6 +139,23 @@ const Register: React.FC = () => {
                 value={formData.aadhaarId}
                 onChange={(e) => setFormData({...formData, aadhaarId: e.target.value.replace(/\D/g, '')})}
               />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">State of Residence</label>
+            <div className="relative">
+              <MapPin className="w-5 h-5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <select 
+                required
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all appearance-none bg-white"
+                value={formData.state}
+                onChange={(e) => setFormData({...formData, state: e.target.value})}
+              >
+                {INDIAN_STATES.map(state => (
+                  <option key={state} value={state}>{state}</option>
+                ))}
+              </select>
             </div>
           </div>
 
