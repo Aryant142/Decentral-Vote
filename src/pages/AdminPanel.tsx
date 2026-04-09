@@ -3,13 +3,16 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot, doc, updateDoc, query, orderBy, setDoc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { User, Candidate, Election } from '../types';
 import { toast } from 'react-hot-toast';
-import { Users, Check, X, ShieldCheck, Plus, Trash2, Eye, Filter, List, Edit2, Save, RotateCcw, AlertTriangle, Calendar, MapPin } from 'lucide-react';
+import { Users, Check, X, ShieldCheck, Plus, Trash2, Eye, Filter, List, Edit2, Save, RotateCcw, AlertTriangle, Calendar, MapPin, BarChart3, Clock } from 'lucide-react';
 import { INDIAN_STATES } from '../constants';
+import { blockchainService } from '../services/blockchainService';
+import { motion } from 'motion/react';
 
 const AdminPanel: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [elections, setElections] = useState<Election[]>([]);
+  const [results, setResults] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'pending'>('pending');
   
@@ -66,6 +69,22 @@ const AdminPanel: React.FC = () => {
       unsubscribeElections();
     };
   }, []);
+
+  useEffect(() => {
+    const fetchResults = async () => {
+      const counts: Record<string, number> = {};
+      for (const candidate of candidates) {
+        counts[candidate.id] = await blockchainService.getResults(candidate.id);
+      }
+      setResults(counts);
+    };
+
+    if (candidates.length > 0) {
+      fetchResults();
+      const interval = setInterval(fetchResults, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [candidates]);
 
   const openModal = (candidate?: Candidate) => {
     if (candidate) {
@@ -304,7 +323,7 @@ const AdminPanel: React.FC = () => {
       await setDoc(doc(db, 'elections', electionId), {
         id: electionId,
         title: 'State Election 2026',
-        state: 'Jammu and Kashmir',
+        state: 'Uttar Pradesh',
         status: 'active',
         startDate: new Date().toISOString()
       });
@@ -319,7 +338,7 @@ const AdminPanel: React.FC = () => {
   if (loading) return <div>Loading Admin Panel...</div>;
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-8">
       <header className="flex justify-between items-start">
         <div>
           <h1 className="text-4xl font-bold tracking-tight">Admin Control Center</h1>
@@ -449,6 +468,71 @@ const AdminPanel: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Live Election Results Section (Admin Only) */}
+          <div className="space-y-6 pt-8 border-t border-neutral-100">
+            <div className="flex items-center space-x-2">
+              <BarChart3 className="w-6 h-6 text-indigo-600" />
+              <h2 className="text-2xl font-bold">Live Election Results</h2>
+            </div>
+
+            <div className="grid md:grid-cols-1 gap-6">
+              {elections.filter(e => e.status === 'active').map(election => {
+                const electionCandidates = candidates.filter(c => c.electionId === election.id);
+                const electionResults = electionCandidates.reduce((acc, c) => {
+                  acc[c.id] = results[c.id] || 0;
+                  return acc;
+                }, {} as Record<string, number>);
+                const totalVotes = (Object.values(electionResults) as number[]).reduce((a, b) => a + b, 0);
+
+                return (
+                  <div key={election.id} className="bg-white rounded-3xl border border-neutral-100 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/50">
+                      <div>
+                        <h3 className="font-bold text-lg">{election.title}</h3>
+                        <p className="text-xs text-neutral-500 uppercase tracking-wider">{election.state}</p>
+                      </div>
+                      <span className="px-2 py-1 bg-green-100 text-green-700 text-[10px] font-bold rounded-full uppercase">Active</span>
+                    </div>
+                    <div className="p-6 space-y-6">
+                      {electionCandidates.length === 0 ? (
+                        <p className="text-neutral-500 text-sm italic">No candidates registered.</p>
+                      ) : (
+                        electionCandidates.map(candidate => {
+                          const votes = results[candidate.id] || 0;
+                          const percentage = totalVotes > 0 ? (votes / totalVotes) * 100 : 0;
+                          return (
+                            <div key={candidate.id} className="space-y-2">
+                              <div className="flex justify-between items-end">
+                                <div>
+                                  <span className="font-bold text-neutral-900 text-sm">{candidate.name}</span>
+                                  <span className="text-[10px] text-neutral-500 ml-2 uppercase">{candidate.party}</span>
+                                </div>
+                                <span className="text-xs font-bold text-indigo-600">{votes} Votes</span>
+                              </div>
+                              <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+                                <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${percentage}%` }}
+                                  className="h-full bg-indigo-600 rounded-full"
+                                />
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {elections.filter(e => e.status === 'active').length === 0 && (
+                <div className="bg-white p-8 rounded-3xl border border-dashed border-neutral-200 text-center">
+                  <Clock className="w-10 h-10 text-neutral-200 mx-auto mb-4" />
+                  <p className="text-neutral-500 text-sm">No active elections to display results for.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

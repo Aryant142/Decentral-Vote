@@ -6,7 +6,7 @@ import { collection, onSnapshot, doc, setDoc, serverTimestamp, query, where } fr
 import { blockchainService } from '../services/blockchainService';
 import { Candidate, Election } from '../types';
 import { toast } from 'react-hot-toast';
-import { Vote, CheckCircle, AlertCircle, TrendingUp } from 'lucide-react';
+import { Vote, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const VotingPage: React.FC = () => {
@@ -17,7 +17,6 @@ const VotingPage: React.FC = () => {
   const [electionLoading, setElectionLoading] = useState(true);
   const [isVoting, setIsVoting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
-  const [results, setResults] = useState<Record<string, number>>({});
 
   useEffect(() => {
     // Fetch the active election for user's state
@@ -62,23 +61,6 @@ const VotingPage: React.FC = () => {
       unsubscribeVote();
     };
   }, [user, election?.id]);
-
-  // Fetch results from blockchain
-  useEffect(() => {
-    const fetchResults = async () => {
-      const counts: Record<string, number> = {};
-      for (const candidate of candidates) {
-        counts[candidate.id] = await blockchainService.getResults(candidate.id);
-      }
-      setResults(counts);
-    };
-
-    if (candidates.length > 0) {
-      fetchResults();
-      const interval = setInterval(fetchResults, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [candidates]);
 
   const handleVote = async (candidateId: string) => {
     if (!user || user.kycStatus !== 'approved') {
@@ -194,10 +176,8 @@ const VotingPage: React.FC = () => {
             </div>
             <div className="w-px bg-neutral-100 h-10 self-center"></div>
             <div className="text-center">
-              <p className="text-xs text-neutral-500 uppercase font-bold tracking-widest">Total Votes Cast</p>
-              <p className="text-2xl font-black text-indigo-600">
-                {(Object.values(results) as number[]).reduce((a, b) => a + b, 0)}
-              </p>
+              <p className="text-xs text-neutral-500 uppercase font-bold tracking-widest">Election State</p>
+              <p className="text-2xl font-black text-indigo-600">{election.state}</p>
             </div>
           </div>
         </div>
@@ -248,11 +228,7 @@ const VotingPage: React.FC = () => {
                 <p className="text-neutral-500 text-sm mt-1">{candidate.description || 'No description available.'}</p>
               </div>
               
-              <div className="flex items-center justify-between pt-4 border-t border-neutral-50">
-                <div className="flex items-center space-x-2 text-indigo-600">
-                  <TrendingUp className="w-4 h-4" />
-                  <span className="font-bold">{results[candidate.id] || 0} Votes</span>
-                </div>
+              <div className="flex items-center justify-center pt-4 border-t border-neutral-50">
                 <button 
                   onClick={() => handleVote(candidate.id)}
                   disabled={isVoting || user.kycStatus !== 'approved' || hasVoted}
